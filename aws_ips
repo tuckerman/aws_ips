@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+
+import json
+import urllib2
+
+
+AMAZON_IP_BLOCKS_URL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
+
+
+def _download_from_url(url):
+  return urllib2.urlopen(url).read()
+
+
+def _get_json_from_url(url):
+  return json.loads(_download_from_url(url))
+
+
+class _AmazonIpBlock(object):
+  def __init__(self, ip_prefix, region, service):
+    self._ip_prefix = ip_prefix
+    self._region = region
+    self._service = service
+
+  def __str__(self):
+    return "{ip_prefix: %s, region: %s, service: %s}" % (self.ip_prefix, self.region, self.service)
+
+  def __repr__(self):
+    return str(self)
+
+  def as_json(self):
+    return "{\"ip_prefix\": \"%s\", \"region\": \"%s\", \"service\": \"%s\"}" % (self.ip_prefix, self.region, self.service)
+
+  @property
+  def ip_prefix(self):
+    return self._ip_prefix
+
+  @property
+  def region(self):
+    return self._region
+
+  @property
+  def service(self):
+    return self._service
+
+  @classmethod
+  def from_dict(cls, d):
+    return cls(d["ip_prefix"], d["region"], d["service"])
+
+
+class AmazonIpBlocks(object):
+  def __init__(self, blocks):
+    self._blocks = list(blocks)
+
+  def __iter__(self):
+    return iter(self._blocks)
+
+  def find(self, ip_prefix=None, region=None, service=None):
+    def matches(block, ip_prefix, region, service):
+      if (ip_prefix is not None) and (block.ip_prefix != ip_prefix):
+        return False
+      if (region is not None) and (block.region != region):
+        return False
+      if (service is not None) and (block.service != service):
+        return False
+      return True
+    return (block for block in self if matches(block, ip_prefix, region, service))
+
+  @classmethod
+  def from_dict(cls, d):
+    return cls((_AmazonIpBlock.from_dict(dd) for dd in d))
+
+  @classmethod
+  def from_url(cls, url=None):
+    if url is None:
+      url = AMAZON_IP_BLOCKS_URL
+    return cls.from_dict(_get_json_from_url(url)["prefixes"])
+
+
+if __name__ == "__main__":
+  import argparse
+  parser = argparse.ArgumentParser(description="Search AWS ip blocks.")
+  parser.add_argument("--ip_prefix", type=str, default=None)
+  parser.add_argument("--region", type=str, default=None)
+  parser.add_argument("--service", type=str, default=None)
+  parser.add_argument("--url", type=str, default=None)
+  parser.add_argument("--as_json", type=bool, default=False)
+  args = parser.parse_args()
+
+  blocks = AmazonIpBlocks.from_url(args.url)
+  matches = blocks.find(args.ip_prefix, args.region, args.service)
+  for match in matches:
+    if args.as_json:
+      print match.as_json()
+    else:
+      print match
